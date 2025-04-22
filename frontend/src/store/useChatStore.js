@@ -10,15 +10,16 @@ export const useChatStore = create((set, get) => ({
   isUsersLoading: false,
   isMessagesLoading: false,
 
-  getUsers: async () => {
-    set({ isUsersLoading: true });
+  getUsers: async (options = {}) => {
+    const silent = options.silent;
+    if (!silent) set({ isUsersLoading: true });
     try {
       const res = await axiosInstance.get("/messages/users");
       set({ users: res.data });
     } catch (error) {
       toast.error(error.response.data.message);
     } finally {
-      set({ isUsersLoading: false });
+      if (!silent) set({ isUsersLoading: false });
     }
   },
 
@@ -38,6 +39,8 @@ export const useChatStore = create((set, get) => ({
     try {
       const res = await axiosInstance.post(`/messages/send/${selectedUser._id}`, messageData);
       set({ messages: [...messages, res.data] });
+      // Update users list for real-time sidebar sorting (silent, no flicker)
+      await get().getUsers({ silent: true });
     } catch (error) {
       toast.error(error.response.data.message);
     }
@@ -49,13 +52,19 @@ export const useChatStore = create((set, get) => ({
 
     const socket = useAuthStore.getState().socket;
 
-    socket.on("newMessage", (newMessage) => {
+    socket.on("newMessage", async (newMessage) => {
       const isMessageSentFromSelectedUser = newMessage.senderId === selectedUser._id;
-      if (!isMessageSentFromSelectedUser) return;
-
-      set({
-        messages: [...get().messages, newMessage],
-      });
+      if (isMessageSentFromSelectedUser) {
+        set({ messages: [...get().messages, newMessage] });
+        // Mark as read immediately and refresh users list (silent)
+        try {
+          await axiosInstance.post(`/messages/mark-read/${selectedUser._id}`);
+          await get().getUsers({ silent: true });
+        } catch {}
+        return;
+      }
+      // If message is from another user, refresh users list for unread badge (silent)
+      get().getUsers({ silent: true });
     });
   },
 
@@ -64,5 +73,16 @@ export const useChatStore = create((set, get) => ({
     socket.off("newMessage");
   },
 
-  setSelectedUser: (selectedUser) => set({ selectedUser }),
+  setSelectedUser: async (selectedUser) => {
+    set({ selectedUser });
+    if (selectedUser) {
+      try {
+        await axiosInstance.post(`/messages/mark-read/${selectedUser._id}`);
+        // Refresh users list to update unread counts (silent)
+        await get().getUsers({ silent: true });
+      } catch (error) {
+        // Optionally handle error
+      }
+    }
+  },
 }));

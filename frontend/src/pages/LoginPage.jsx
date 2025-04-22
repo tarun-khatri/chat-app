@@ -83,6 +83,11 @@ const LoginPage = () => {
                   )}
                 </button>
               </div>
+              <div className="flex justify-end mt-1">
+                <Link to="/forgot-password" className="link link-primary text-sm">
+                  Forgot Password?
+                </Link>
+              </div>
             </div>
 
             <button type="submit" className="btn btn-primary w-full" disabled={isLoggingIn}>
